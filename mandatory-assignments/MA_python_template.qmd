@@ -1,0 +1,125 @@
+---
+title: Mandatory Assignment 0
+author: Stefan Voigt
+date: 2024-01-03
+date-format: MMMM DD, YYYY
+execute: 
+  echo: false
+  warning: false
+format:
+  pdf: 
+    number-sections: true
+    colorlinks: true
+    geometry:
+      - top=20mm
+      - left=20mm
+      - bottom=20mm
+      - right=20mm
+    bibliography: references.bib
+    cite-method: natbib
+    biblio-style: apalike  
+    lang: en
+    fontsize: 12pt
+    highlight-style: github-light
+---
+
+
+## Quarto - a framework for reproducible research
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>. When you click the **Preview** button in Positron or type `quarto render` in the terminal a .pdf document will be generated that includes both content and the output of embedded code. The template below can be used to submit your answers for the mandatory assignment. Within the template you find all typical issues. By default, code is omitted in the output (can be changed with `echo: true` in line 6). Formatting is done using markdown (e.g., check out how to use \# to define sections and subsections or how to generate bold text). Footnotes and citations are easy. You can also include math notation using LaTeX style. The template contains inline code execution (e.g. to automatically return the ticker of the asset with the highest Sharpe ratio) and shows how to embed figures into the document.
+
+## Exercise
+
+1. Download daily adjusted prices for all constituents of three stocks: AAPL, MSFT, and BA for the period from January 1st, 2000 until December 31st, 2025 from Yahoo!Finance. Explicitly include the code you use to download the data into your report. Compute the daily returns for each of the tickers.
+
+```{python}
+import pandas as pd
+import numpy as np
+import tidyfinance as tf
+from plotnine import *
+from mizani.formatters import percent_format
+```
+
+```{python} 
+#| echo: true
+#| cache: true
+
+ticker = ["AAPL", "MSFT", "BA"]
+prices = tf.download_data(
+  domain="stock_prices", 
+  symbols=ticker,
+  start_date="2000-01-01", 
+  end_date="2025-12-31"
+)
+
+returns = (prices
+  .assign(ret=lambda x: x.groupby("symbol")["adjusted_close"].pct_change())
+  .get(["symbol", "date", "ret"])
+  .dropna(subset="ret")
+)
+```
+
+1. Visualize the distribution of the daily returns.
+
+```{python}
+#| label: fig-return-distribution
+#| fig-cap: Distribution of daily stock returns. 
+
+returns_figure = (
+  ggplot(returns, aes(x="ret", fill="symbol")) +
+  geom_histogram(bins=100) +
+  labs(x="", y="",
+       fill ="") +
+  facet_wrap("symbol") +
+  scale_x_continuous(labels=percent_format()) +
+  theme_bw() +
+  theme(legend_position = "none")
+)
+returns_figure.draw()
+```
+
+@fig-return-distribution shows the distribution of daily returns for the three assets.
+
+1. Compute the sample mean $\mu$ and the variance-covariance matrix $\Sigma$ of the returns.
+Which of the individual assets delivered the highest Sharpe ratio (assume the risk-free rate is zero) during the sample period?^[Whenever reporting performance measures, compute annualized values and clearly state how you calculated the measure.]
+The estimated moments may later be used for the construction of optimal portfolios (@Markowitz1952; @Merton1972)
+
+```{python}
+returns_matrix = (prices
+  .pivot(columns="symbol", 
+         values="adjusted_close", 
+         index="date")
+  .pct_change()
+  .dropna()
+)
+
+mu = np.array(returns_matrix.mean()).T
+sigma = np.array(returns_matrix.cov())
+
+sharpe_ratio = pd.DataFrame({"ticker": ticker,
+  "Sharpe": np.sqrt(250) * mu / np.sqrt(np.diag(sigma))})
+```
+
+**Answer: ** The asset with the highest annualized Sharpe-ratio, computed as 
+$$
+\sqrt{250}\frac{\hat\mu_i}{\hat\sigma_i},
+$$
+
+where $\hat\mu_i$ is the sample mean of asset $i$s dailies returns and $\hat\sigma_i$ is the standard deviation of asset $i$s dailys returns is `{python} sharpe_ratio.loc[sharpe_ratio['Sharpe'] == sharpe_ratio['Sharpe'].max(), 'ticker'].iloc[0]` with an annualized Sharpe-ratio of `{python} round(sharpe_ratio['Sharpe'].max(), 3)`. @tbl-sharpe-ratios illustrates all Sharpe ratios. 
+
+```{python}
+#| tbl-cap: Historical annualized Sharpe-ratios
+#| label: tbl-sharpe-ratios
+#| output: asis
+from great_tables import GT
+tbl = (
+    GT(sharpe_ratio)
+    .fmt_number(columns="Sharpe", decimals=3)
+)
+latex_tbl = tbl.as_latex()
+print(latex_tbl)
+```
+
+## References
+::::{#refs}
+::::
