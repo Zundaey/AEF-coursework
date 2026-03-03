@@ -1,55 +1,54 @@
-# mandatory_assignment1_ex1.py
-
 import tidyfinance as tf
 import pandas as pd
 import numpy as np
 
-# Set random seed for reproducibility (used later in simulations)
+# For reproducibility
 np.random.seed(2026)
 
-# 1. Download daily data from Yahoo!Finance
-tickers = ["^GSPC", "^IRX"]
+start_date = "2000-01-01"
+end_date   = "2026-02-28"
 
-data = tf.download_data(
-    domain="stock_prices",
-    symbols=tickers,
-    start_date="2000-01-01",
-    end_date="2026-02-28"
-)
+# Download daily data
+sp500 = tf.download_data(domain="stock_prices", symbols="^GSPC", start_date=start_date, end_date=end_date)
+tbill = tf.download_data(domain="stock_prices", symbols="^IRX", start_date=start_date, end_date=end_date)
 
 # Convert date column to datetime
-data['date'] = pd.to_datetime(data['date'])
-data.set_index('date', inplace=True)
+sp500['date'] = pd.to_datetime(sp500['date'])
+tbill['date'] = pd.to_datetime(tbill['date'])
 
-# 2. Compute monthly returns for S&P 500
-sp500 = data[data['symbol'] == '^GSPC']['close'].resample('M').last()
-sp500_returns = sp500.pct_change().dropna()
+# Set as index
+sp500 = sp500.set_index('date')
+tbill = tbill.set_index('date')
+# Resample to monthly frequency and calculate returns
+sp500_monthly = (
+    sp500['close']
+    .resample('ME')
+    .last()
+    .pct_change()
+)
 
-# 3. Convert 13-week T-bill annualized yield to monthly rate
-t_bill = data[data['symbol'] == '^IRX']['close'].resample('M').last() / 100
-t_bill_monthly_rate = (1 + t_bill)**(1/12) - 1
+tbill['MonthlyRate'] = (1 + tbill['close'] / 100)**(1/12) - 1
+tbill_monthly = (
+    tbill['MonthlyRate']
+    .resample('ME')
+    .last()
+)
+# Combine into a single DataFrame
+data = pd.DataFrame({
+    "SP500_Return": sp500_monthly,
+    "TBill_Return": tbill_monthly
+}).dropna()
 
-# 4. Compute monthly excess market return
-excess_market_return = sp500_returns - t_bill_monthly_rate
+data["Excess_Return"] = data["SP500_Return"] - data["TBill_Return"]
 
-# 5. Estimate mean and variance (monthly)
-mu_m = excess_market_return.mean()
-sigma2_m = excess_market_return.var()
+mu_m = data["Excess_Return"].mean()
+sigma2_m = data["Excess_Return"].var()
 
-# Annualized equivalents
-mu_m_annual = mu_m * 12
-sigma2_m_annual = sigma2_m * 12
+mu_annual = 12 * mu_m
+sigma2_annual = 12 * sigma2_m
 
-# Combine results into a single DataFrame
-monthly_data = pd.DataFrame({
-    'SP500_Returns': sp500_returns,
-    'TBill_13w_Monthly': t_bill_monthly_rate,
-    'Excess_Market_Return': excess_market_return
-})
-
-# Display first rows and summary stats
-print("First 5 rows of monthly data:\n", monthly_data.head())
-print("\nMonthly mean excess return:", mu_m)
-print("Monthly return variance:", sigma2_m)
-print("Annualized mean excess return:", mu_m_annual)
-print("Annualized return variance:", sigma2_m_annual)
+#print output
+print("Monthly mean excess return:", mu_m)
+print("Monthly variance:", sigma2_m)
+print("Annualized mean excess return:", mu_annual)
+print("Annualized variance:", sigma2_annual)
