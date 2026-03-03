@@ -1,0 +1,62 @@
+---
+title: Assignment 1
+format: html
+---
+
+```{python}
+#| label: load-packages
+#| include: false
+from plotnine import *
+from plotnine.data import penguins
+import pandas as pd
+import numpy as np
+import tidyfinance as tf
+from plotnine import *
+from mizani.formatters import percent_format
+```
+
+## Stock returns
+The data contains monthly returns for the S&P 500 index (GSPC) and the 13-week Treasury Bill rate (^IRX)
+
+@fig-plot-return shows the monthly return of the two assets.
+
+```{python}
+#| label: computation of returns
+#| include: false 
+#| echo: true
+#| cache: true
+#cache => downloader kun en gang
+
+
+prices = tf.download_data(
+  domain="stock_prices", 
+  symbols=["^GSPC", "^IRX"],
+  start_date="2000-01-01", 
+  end_date="2025-12-31"
+)
+
+
+returns = (prices
+  .assign(ret=lambda x: x.groupby("symbol")["adjusted_close"].pct_change())
+  .get(["symbol", "date", "ret"])
+  .dropna(subset="ret")
+)
+
+```
+
+```{python}
+#| label: review data
+#| include: true
+#| echo: false
+# koden vises ikke men output gør 
+prices.head(3).round(3)
+
+```
+
+```{python}
+#| label: review computations
+#| include: true
+#| echo: false
+returns.head(3).round(3)
+
+```
