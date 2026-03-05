@@ -1,8 +1,8 @@
 ---
 title: Mandatory Assignment 1
 author: Sander Lydom & Sigurd Sørensen
-date: 08-03-2026
-date-format: DD MMMM, YYYY
+date: 02-08-2026
+date-format: MMMM, DD, YYYY
 execute: 
   echo: false
   warning: false
