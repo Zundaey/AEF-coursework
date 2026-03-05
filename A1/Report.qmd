@@ -1,0 +1,380 @@
+---
+title: Mandatory Assignment 1
+author: Sander Lydom & Sigurd Sørensen
+date: 08-03-2026
+date-format: DD MMMM, YYYY
+execute: 
+  echo: false
+  warning: false
+format:
+  pdf: 
+    number-sections: true
+    colorlinks: true
+    geometry:
+      - top=20mm
+      - left=20mm
+      - bottom=20mm
+      - right=20mm
+    bibliography: references.bib
+    cite-method: natbib
+    biblio-style: apalike  
+    lang: en
+    fontsize: 12pt
+    highlight-style: github-light
+---
+
+```{python}
+# -----------------------------------------------------------------------
+# SETUP — runs silently; all figures and numbers in this report are
+# produced by this block and the per-exercise blocks below.
+# -----------------------------------------------------------------------
+import tidyfinance as tf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+np.random.seed(2026)
+
+def simulate_returns(periods, expected_returns, covariance_matrix):
+    returns = np.random.multivariate_normal(
+        expected_returns, covariance_matrix, size=periods
+    )
+    return returns
+
+# ---- Exercise 1 --------------------------------------------------------
+start_date = "2000-01-01"
+end_date   = "2026-02-28"
+
+sp500 = tf.download_data(domain="stock_prices", symbols="^GSPC",
+                         start_date=start_date, end_date=end_date)
+tbill = tf.download_data(domain="stock_prices", symbols="^IRX",
+                         start_date=start_date, end_date=end_date)
+
+sp500['date'] = pd.to_datetime(sp500['date'])
+tbill['date'] = pd.to_datetime(tbill['date'])
+sp500 = sp500.set_index('date')
+tbill = tbill.set_index('date')
+
+sp500_monthly = sp500['close'].resample('ME').last().pct_change()
+tbill['MonthlyRate'] = (1 + tbill['close'] / 100) ** (1 / 12) - 1
+tbill_monthly = tbill['MonthlyRate'].resample('ME').last()
+
+data = pd.DataFrame({
+    "SP500_Return": sp500_monthly,
+    "TBill_Return": tbill_monthly
+}).dropna()
+
+data["Excess_Return"] = data["SP500_Return"] - data["TBill_Return"]
+
+mu_m          = data["Excess_Return"].mean()
+sigma2_m      = data["Excess_Return"].var()
+mu_annual     = 12 * mu_m
+sigma2_annual = 12 * sigma2_m
+
+# ---- Exercise 2 --------------------------------------------------------
+N = 50
+
+beta      = np.random.uniform(0.5, 1.5, size=N)
+sigma_eps = np.random.uniform(0.10 / np.sqrt(12), 0.30 / np.sqrt(12), size=N)
+
+mu    = beta * mu_m
+Sigma = sigma2_m * np.outer(beta, beta) + np.diag(sigma_eps**2)
+
+T = len(data)
+
+# ---- Exercise 3 --------------------------------------------------------
+def closed_form_frontier(mu, Sigma, R_grid=None, n_points=200):
+    mu    = np.asarray(mu).reshape(-1)
+    Sigma = np.asarray(Sigma)
+    N_    = mu.shape[0]
+    ones  = np.ones(N_)
+
+    invSigma_ones = np.linalg.solve(Sigma, ones)
+    invSigma_mu   = np.linalg.solve(Sigma, mu)
+
+    A = ones @ invSigma_ones
+    B = ones @ invSigma_mu
+    C = mu   @ invSigma_mu
+    D = A * C - B ** 2
+
+    if D <= 0:
+        raise np.linalg.LinAlgError("Non-positive D.")
+
+    if R_grid is None:
+        mmin, mmax = mu.min(), mu.max()
+        spread = max(1e-6, 0.5 * np.std(mu))
+        R_grid = np.linspace(mmin - spread, mmax + spread, n_points)
+    R_grid = np.asarray(R_grid).reshape(-1)
+
+    alpha_coef = (C - B * R_grid) / D
+    beta_coef  = (A * R_grid - B) / D
+
+    W = (alpha_coef[:, None] * invSigma_ones[None, :] +
+         beta_coef[:, None]  * invSigma_mu[None, :])
+
+    var_grid = (A * R_grid**2 - 2 * B * R_grid + C) / D
+    sigma    = np.sqrt(np.clip(var_grid, 0.0, None))
+
+    denom = ones @ invSigma_mu
+    if np.isclose(denom, 0.0):
+        raise np.linalg.LinAlgError("Degenerate tangency.")
+    w_t     = invSigma_mu / denom
+    R_t     = mu @ w_t
+    sigma_t = np.sqrt(w_t @ (Sigma @ w_t))
+
+    return R_grid, sigma, W, w_t, R_t, sigma_t
+
+R_true, sigma_true, W_true, w_t_true, R_t_true, sigma_t_true = \
+    closed_form_frontier(mu, Sigma)
+
+true_sharpe = R_t_true / sigma_t_true
+
+# ---- Exercise 5 --------------------------------------------------------
+T_values  = [60, 120, 240, 600]
+n_sim_q5  = 100
+
+# ---- Exercise 6 --------------------------------------------------------
+n_sim_q6   = 500
+results_q6 = {T: [] for T in T_values}
+
+for T_sim in T_values:
+    for _ in range(n_sim_q6):
+        sim_ret   = simulate_returns(T_sim, mu, Sigma)
+        mu_hat    = sim_ret.mean(axis=0)
+        Sigma_hat = np.cov(sim_ret.T)
+        try:
+            _, _, _, w_hat, _, _ = closed_form_frontier(mu_hat, Sigma_hat)
+            R_oos   = mu @ w_hat
+            var_oos = w_hat @ Sigma @ w_hat
+            results_q6[T_sim].append(R_oos / np.sqrt(var_oos))
+        except Exception:
+            pass
+
+# ---- Exercise 7 --------------------------------------------------------
+def portfolio_equal_weight(N):
+    return np.ones(N) / N
+
+def portfolio_min_variance(Sigma):
+    ones          = np.ones(Sigma.shape[0])
+    invSigma_ones = np.linalg.solve(Sigma, ones)
+    return invSigma_ones / (ones @ invSigma_ones)
+
+def portfolio_volatility_parity(Sigma):
+    std = np.sqrt(np.diag(Sigma))
+    w   = 1.0 / std
+    return w / w.sum()
+
+def portfolio_factor(beta_vec):
+    return beta_vec / beta_vec.sum()
+
+def sharpe_ratio_true(w):
+    R   = mu @ w
+    vol = np.sqrt(w @ Sigma @ w)
+    return R / vol
+
+strategies = {
+    'Equal weight (1/N)': lambda mu_h, Sigma_h: portfolio_equal_weight(N),
+    'Min. variance':      lambda mu_h, Sigma_h: portfolio_min_variance(Sigma_h),
+    'Volatility parity':  lambda mu_h, Sigma_h: portfolio_volatility_parity(Sigma_h),
+    'Factor portfolio':   lambda mu_h, Sigma_h: portfolio_factor(beta),
+    'Plug-in tangency':   lambda mu_h, Sigma_h: closed_form_frontier(mu_h, Sigma_h)[3],
+}
+
+n_sim_q7   = 500
+results_q7 = {name: {T: [] for T in T_values} for name in strategies}
+
+for T_sim in T_values:
+    for _ in range(n_sim_q7):
+        sim_ret   = simulate_returns(T_sim, mu, Sigma)
+        mu_hat    = sim_ret.mean(axis=0)
+        Sigma_hat = np.cov(sim_ret.T)
+        for name, fn in strategies.items():
+            try:
+                w  = fn(mu_hat, Sigma_hat)
+                sr = sharpe_ratio_true(w)
+                results_q7[name][T_sim].append(sr)
+            except Exception:
+                pass
+```
+
+## Market Data and Excess Returns
+
+We download monthly S&P 500 returns and 13-week T-Bill yields from Yahoo! Finance for January 2000 to February 2026. The T-Bill annualized yield is converted to a monthly risk-free rate via $r_{f,t} = (1 + \text{IRX}_t/100)^{1/12} - 1$, and monthly excess market returns are computed as $\tilde{r}_{m,t} = r_{m,t} - r_{f,t}$.
+
+```{python}
+print(f"Monthly mean excess return:    {mu_m:.4f}  |  Annualized: {mu_annual:.4f}")
+print(f"Monthly variance:              {sigma2_m:.6f}  |  Annualized: {sigma2_annual:.6f}")
+```
+
+The estimated annualized mean excess return is `{python} round(mu_annual, 4)` and the annualized variance is `{python} round(sigma2_annual, 6)`, based on `{python} T` monthly observations.
+
+## Synthetic Asset Universe
+
+We construct $N = 50$ synthetic assets from the single-factor model:
+$$
+\tilde{r}_{i,t} = \beta_i \tilde{r}_{m,t} + \varepsilon_{i,t}, \quad \varepsilon_{i,t} \overset{iid}{\sim} \mathcal{N}(0, \sigma^2_{\varepsilon,i}),
+$$
+where $\beta_i \overset{iid}{\sim} \text{Uniform}(0.5, 1.5)$ and $\sigma_{\varepsilon,i} \overset{iid}{\sim} \text{Uniform}\!\left(\frac{0.10}{\sqrt{12}}, \frac{0.30}{\sqrt{12}}\right)$. The true parameters are:
+$$
+\mu_i = \beta_i \mu_m, \qquad \Sigma = \sigma^2_m \beta\beta' + \text{diag}(\sigma^2_\varepsilon).
+$$
+These are treated as the true data-generating process throughout.
+
+## Efficient Frontier Function
+
+The mean-variance efficient frontier is computed analytically using the closed-form solution. For a given target return $\bar{\mu}$, the frontier portfolio weights are:
+$$
+\omega(\bar{\mu}) = \frac{C - B\bar{\mu}}{D}\Sigma^{-1}\iota + \frac{A\bar{\mu} - B}{D}\Sigma^{-1}\mu,
+$$
+where $A = \iota'\Sigma^{-1}\iota$, $B = \iota'\Sigma^{-1}\mu$, $C = \mu'\Sigma^{-1}\mu$, and $D = AC - B^2$. The tangency portfolio is proportional to $\Sigma^{-1}\mu$, scaled to sum to one. Linear systems are solved numerically rather than inverting $\Sigma$ explicitly for numerical stability.
+
+## True Efficient Frontier
+
+@fig-frontier shows the efficient frontier and tangency portfolio computed from the true parameters $\mu$ and $\Sigma$.
+
+```{python}
+#| label: fig-frontier
+#| fig-cap: "Mean-variance efficient frontier based on true parameters. The red dot marks the tangency portfolio. All values are annualized."
+#| fig-width: 5
+#| fig-height: 3.5
+
+fig, ax = plt.subplots(figsize=(5, 3.5))
+ax.plot(sigma_true * np.sqrt(12), R_true * 12, 'k-', lw=2, label='Efficient frontier')
+ax.scatter(sigma_t_true * np.sqrt(12), R_t_true * 12,
+           color='red', zorder=5, s=80, label='Tangency portfolio')
+ax.set_xlabel('Annualized std. dev.')
+ax.set_ylabel('Annualized excess return')
+ax.legend(fontsize=9)
+ax.grid(alpha=0.25)
+plt.tight_layout()
+plt.show()
+```
+
+The true tangency portfolio achieves an annualized Sharpe ratio of `{python} round(true_sharpe * np.sqrt(12), 3)`.
+
+## Estimation Error and the Plug-In Frontier
+
+Using the simulation framework, we draw $S = 100$ samples of size $T$ from the true DGP and compute the plug-in frontier for each sample. @fig-estimation shows results for $T \in \{60, 120, 240, 600\}$ months.
+
+```{python}
+#| label: fig-estimation
+#| fig-cap: "Plug-in efficient frontiers (blue, 100 simulations) versus the true frontier (black) for varying sample sizes T. The ratio N/T governs estimation error."
+#| fig-width: 7
+#| fig-height: 5.5
+
+fig, axes = plt.subplots(2, 2, figsize=(7, 5.5))
+
+for ax, T_sim in zip(axes.flat, T_values):
+    for _ in range(n_sim_q5):
+        sim_ret   = simulate_returns(T_sim, mu, Sigma)
+        mu_hat    = sim_ret.mean(axis=0)
+        Sigma_hat = np.cov(sim_ret.T)
+        try:
+            _, sigma_sim, _, _, _, _ = closed_form_frontier(
+                mu_hat, Sigma_hat, R_grid=R_true)
+            ax.plot(sigma_sim * np.sqrt(12), R_true * 12,
+                    color='steelblue', alpha=0.15, lw=0.8)
+        except Exception:
+            pass
+    ax.plot(sigma_true * np.sqrt(12), R_true * 12, 'k-', lw=2,
+            label='True frontier', zorder=5)
+    ax.set_title(f'$T={T_sim}$  ($N/T={N/T_sim:.2f}$)', fontsize=10)
+    ax.set_xlabel('Ann. std. dev.', fontsize=8)
+    ax.set_ylabel('Ann. excess return', fontsize=8)
+    ax.set_xlim(left=0, right=sigma_true.max() * np.sqrt(12) * 3)
+    ax.legend(fontsize=7)
+    ax.grid(alpha=0.25)
+
+plt.tight_layout()
+plt.show()
+```
+
+The key driver of estimation error is the ratio $N/T$. When $T$ is small relative to $N$, the sample covariance matrix is poorly conditioned and both $\hat{\mu}$ and $\hat{\Sigma}$ are noisy. Plug-in frontiers systematically lie to the left of the true frontier — overstating attainable Sharpe ratios. As $T$ grows, the plug-in frontiers converge to the true frontier.
+
+## Out-of-Sample Performance of the Plug-In Tangency Portfolio
+
+For each $T$, we simulate $S = 500$ samples, estimate plug-in tangency weights $\hat{\omega}_t$, and evaluate their Sharpe ratio using the true parameters. @fig-oos shows the distribution of out-of-sample Sharpe ratios.
+
+```{python}
+#| label: fig-oos
+#| fig-cap: "Out-of-sample monthly Sharpe ratio of the plug-in tangency portfolio across 500 simulations. The red dashed line is the true tangency Sharpe ratio."
+#| fig-width: 5.5
+#| fig-height: 3.5
+
+fig, ax = plt.subplots(figsize=(5.5, 3.5))
+ax.boxplot(
+    [results_q6[T] for T in T_values],
+    tick_labels=[str(T) for T in T_values],
+    patch_artist=True,
+    boxprops=dict(facecolor='steelblue', alpha=0.6)
+)
+ax.axhline(true_sharpe, color='red', linestyle='--', lw=1.5,
+           label=f'True Sharpe = {true_sharpe:.3f}')
+ax.set_xlabel('Sample size $T$ (months)')
+ax.set_ylabel('Monthly Sharpe ratio (OOS)')
+ax.legend(fontsize=9)
+ax.grid(alpha=0.25, axis='y')
+plt.tight_layout()
+plt.show()
+```
+
+At $T = 60$ (i.e. $N/T \approx 0.83$), the median out-of-sample Sharpe ratio is far below the true optimum and the distribution is highly dispersed, including negative values. Performance improves substantially as $T$ increases, consistent with @Jobson1980. The economic loss from estimation error is severe at realistic sample sizes.
+
+## Alternative Portfolio Strategies
+
+We consider four strategies alongside the plug-in tangency portfolio:
+
+**Equal weight (1/N).** Assigns $\omega_i = 1/N$ to each asset. This ignores all parameter estimates entirely, so estimation error cannot compound. It serves as a robustness benchmark @DeMiguel2009.
+
+**Global minimum variance (GMV).** Solves $\min_\omega \omega'\Sigma\omega$ subject to $\omega'\iota = 1$. By avoiding estimation of expected returns — the noisiest input — GMV is substantially more robust than the plug-in tangency portfolio.
+
+**Volatility parity.** Sets $\omega_i \propto 1/\hat{\sigma}_i$, equalizing each asset's standalone risk contribution. This requires only diagonal elements of $\hat{\Sigma}$, making it more robust than GMV to off-diagonal estimation error.
+
+**Factor portfolio.** Sets $\omega_i \propto \beta_i$, allocating in proportion to market exposure. In a single-factor world this is theoretically motivated: beta is the only priced characteristic, and the strategy avoids estimating the full $N \times N$ covariance matrix.
+
+@fig-strategies compares all strategies by median out-of-sample Sharpe ratio across sample sizes.
+
+```{python}
+#| label: fig-strategies
+#| fig-cap: "Median out-of-sample monthly Sharpe ratio across 500 simulations for each strategy. The dashed line is the true tangency (oracle) Sharpe ratio."
+#| fig-width: 6
+#| fig-height: 4
+
+fig, ax = plt.subplots(figsize=(6, 4))
+colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+
+for name, color in zip(strategies.keys(), colors):
+    medians = [np.median(results_q7[name][T]) for T in T_values]
+    ax.plot(T_values, medians, marker='o', label=name, color=color, lw=2)
+
+ax.axhline(true_sharpe, color='k', linestyle='--', lw=1.5,
+           label='True tangency (oracle)')
+ax.set_xlabel('Sample size $T$ (months)')
+ax.set_ylabel('Median monthly Sharpe ratio (OOS)')
+ax.legend(fontsize=8)
+ax.grid(alpha=0.25)
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| tbl-cap: "Median out-of-sample monthly Sharpe ratios by strategy and sample size."
+#| label: tbl-strategies
+
+rows = []
+for name in strategies:
+    row = {"Strategy": name}
+    for T in T_values:
+        row[f"T={T}"] = round(np.median(results_q7[name][T]), 3)
+    rows.append(row)
+
+df = pd.DataFrame(rows)
+print(df.to_latex(index=False, float_format="%.3f"))
+```
+
+At small $T$, the plug-in tangency portfolio is the worst performer — its unrestricted reliance on noisy $\hat{\mu}$ and $\hat{\Sigma}$ causes extreme weight concentration. The factor portfolio performs best at all sample sizes in this simulation, exploiting the known single-factor structure. Strategies that avoid estimating expected returns (GMV, volatility parity, equal weight) consistently outperform the plug-in tangency at short horizons. The practical lesson is that simpler, more constrained strategies are preferable when $N/T$ is large.
+
+## References
+
+::::{#refs}
+::::

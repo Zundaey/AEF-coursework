@@ -1,3 +1,35 @@
+---
+title: Mandatory Assignment 1
+author: Sander Lydom & Sigurd Sørensen
+date: 08-03-2026
+date-format: DD MMMM, YYYY
+execute: 
+  echo: false
+  warning: false
+format:
+  pdf: 
+    number-sections: true
+    colorlinks: true
+    geometry:
+      - top=20mm
+      - left=20mm
+      - bottom=20mm
+      - right=20mm
+    bibliography: references.bib
+    cite-method: natbib
+    biblio-style: apalike  
+    lang: en
+    fontsize: 12pt
+    highlight-style: github-light
+---
+
+
+
+## Setup
+
+Import libraries and set the random seed for reproducibility. The seed is fixed at the top of the script as required by Exercise 5.
+
+```{python}
 import tidyfinance as tf
 import pandas as pd
 import numpy as np
@@ -17,11 +49,13 @@ def simulate_returns(periods, expected_returns, covariance_matrix):
     """
     returns = np.random.multivariate_normal(expected_returns, covariance_matrix, size=periods)
     return returns
+```
 
+## Exercise 1 — Market data and excess returns
 
-# ===========================================================================
-# Exercise 1 — Market data and excess returns
-# ===========================================================================
+Download daily S&P 500 prices and 13-week T-Bill yields, resample to monthly frequency, and compute monthly excess returns. Annualise the mean and variance by multiplying by 12.
+
+```{python}
 start_date = "2000-01-01"
 end_date   = "2026-02-28"
 
@@ -64,11 +98,13 @@ print(f"Monthly mean excess return:      {mu_m:.4f}")
 print(f"Monthly variance:                {sigma2_m:.6f}")
 print(f"Annualized mean excess return:   {mu_annual:.4f}")
 print(f"Annualized variance:             {sigma2_annual:.6f}")
+```
 
+## Exercise 2 — Construct 50 synthetic assets via single-factor model
 
-# ===========================================================================
-# Exercise 2 — Construct 50 synthetic assets via single-factor model
-# ===========================================================================
+Draw betas and idiosyncratic volatilities from uniform distributions to construct 50 synthetic assets. Their true expected returns and covariance matrix follow from the single-factor structure.
+
+```{python}
 N = 50
 
 # Draw betas and idiosyncratic volatilities from uniform distributions
@@ -87,11 +123,13 @@ print("\n=== Exercise 2 ===")
 print(f"N = {N} assets, T = {T} months")
 print(f"beta range:      [{beta.min():.3f}, {beta.max():.3f}]")
 print(f"sigma_eps range: [{sigma_eps.min():.4f}, {sigma_eps.max():.4f}]")
+```
 
+## Exercise 3 — Mean-variance efficient frontier and tangency portfolio
 
-# ===========================================================================
-# Exercise 3 — Mean-variance efficient frontier and tangency portfolio
-# ===========================================================================
+Compute the true efficient frontier and tangency portfolio analytically using the closed-form solution. This avoids explicit matrix inversion for numerical stability.
+
+```{python}
 def closed_form_frontier(mu, Sigma, R_grid=None, n_points=200):
     """
     Compute the mean-variance efficient frontier and tangency portfolio
@@ -168,11 +206,13 @@ print("\n=== Exercise 3 ===")
 print(f"True tangency return (monthly):  {R_t_true:.4f}  (annualized: {R_t_true * 12:.4f})")
 print(f"True tangency std dev (monthly): {sigma_t_true:.4f}  (annualized: {sigma_t_true * np.sqrt(12):.4f})")
 print(f"True tangency Sharpe (monthly):  {R_t_true / sigma_t_true:.4f}")
+```
 
+## Exercise 4 — Visualise the true efficient frontier
 
-# ===========================================================================
-# Exercise 4 — Visualise the true efficient frontier
-# ===========================================================================
+Plot the mean-variance efficient frontier and mark the tangency portfolio. All values are annualised for readability.
+
+```{python}
 fig, ax = plt.subplots(figsize=(7, 5))
 
 # Plot frontier (annualised units for readability)
@@ -190,16 +230,15 @@ ax.set_title('Exercise 4 — True efficient frontier (μ and Σ)')
 ax.legend()
 ax.grid(alpha=0.25)
 plt.tight_layout()
-plt.savefig('A1/q4_frontier.png', dpi=150)
+plt.show()
+```
 
+## Exercise 5 — Estimation error: how N/T affects the plug-in frontier
 
+For each sample size T, simulate 100 samples from the true DGP and overlay the resulting plug-in frontiers against the true frontier. As N/T increases, estimation error worsens and plug-in frontiers increasingly overstate attainable Sharpe ratios.
 
-# ===========================================================================
-# Exercise 5 — Estimation error: how N/T affects the plug-in frontier
-# ===========================================================================
-# We draw many samples of size T from the true DGP and compute the plug-in
-# frontier for each sample. As N/T increases, estimation error worsens.
-T_values     = [60, 120, 252, 504]   # sample sizes to study (months)
+```{python}
+T_values     = [60, 120, 240, 600]   # sample sizes to compare (months)
 n_sim_q5     = 100                   # number of Monte Carlo replications per T
 
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))
@@ -231,19 +270,18 @@ for ax, T_sim in zip(axes.flat, T_values):
     ax.grid(alpha=0.25)
 
 plt.tight_layout()
-plt.savefig('A1/q5_estimation_error.png', dpi=150)
-
+plt.show()
 
 print("\n=== Exercise 5 ===")
 print("Estimation error is driven by the ratio N/T.")
 print("As T falls (or N grows), plug-in frontiers increasingly overstate the attainable Sharpe ratio.")
+```
 
+## Exercise 6 — Out-of-sample performance: plug-in tangency vs true optimum
 
-# ===========================================================================
-# Exercise 6 — Out-of-sample performance: plug-in tangency vs true optimum
-# ===========================================================================
-# For each simulated sample we compute the plug-in tangency weights and
-# evaluate their Sharpe ratio using the TRUE parameters (out-of-sample).
+For each T, simulate 500 samples, compute the plug-in tangency weights, and evaluate their Sharpe ratio using the TRUE parameters. This quantifies how much estimation error erodes out-of-sample performance.
+
+```{python}
 n_sim_q6   = 500
 true_sharpe = R_t_true / sigma_t_true   # monthly Sharpe of the oracle tangency portfolio
 
@@ -278,22 +316,20 @@ ax.set_title('Exercise 6 — OOS Sharpe ratio of plug-in tangency portfolio')
 ax.legend()
 ax.grid(alpha=0.25, axis='y')
 plt.tight_layout()
-plt.savefig('A1/q6_oos_sharpe.png', dpi=150)
-
+plt.show()
 
 print("\n=== Exercise 6 ===")
 for T_sim in T_values:
     vals = results_q6[T_sim]
     print(f"T={T_sim:>4}: median OOS Sharpe = {np.median(vals):.4f}  "
           f"(true = {true_sharpe:.4f}, ratio = {np.median(vals)/true_sharpe:.2f})")
+```
 
+## Exercise 7 — Alternative portfolio strategies
 
-# ===========================================================================
-# Exercise 7 — Alternative portfolio strategies
-# ===========================================================================
+Compare five strategies across sample sizes by their median out-of-sample Sharpe ratio, evaluated against the true parameters. Strategies that avoid estimating expected returns (GMV, volatility parity) are expected to be more robust at small T.
 
-# --- Strategy implementations ---
-
+```{python}
 def portfolio_equal_weight(N):
     """
     Naive diversification (1/N): equal weight for every asset.
@@ -388,8 +424,7 @@ ax.set_title('Exercise 7 — Strategy comparison across sample sizes')
 ax.legend(fontsize=9)
 ax.grid(alpha=0.25)
 plt.tight_layout()
-plt.savefig('A1/q7_strategy_comparison.png', dpi=150)
-
+plt.show()
 
 # --- Summary table ---
 print("\n=== Exercise 7 — Median OOS Sharpe ratios ===")
@@ -400,3 +435,4 @@ for name in strategies:
     row = f"{name:<25}" + "".join([f"{np.median(results_q7[name][T]):>10.4f}" for T in T_values])
     print(row)
 print(f"\n{'True tangency (oracle)':<25}" + "".join([f"{true_sharpe:>10.4f}" for _ in T_values]))
+```
